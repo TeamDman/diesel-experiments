@@ -1,10 +1,8 @@
 use dotenvy::dotenv;
-use futures::future::poll_fn;
 use std::env;
 use tokio::sync::mpsc;
-use tokio_postgres::connect;
-use tokio_postgres::AsyncMessage;
-use tokio_postgres::NoTls;
+use tokio_postgres::{connect, AsyncMessage, NoTls};
+use futures::future::poll_fn;
 
 #[tokio::main]
 async fn main() -> Result<(), tokio_postgres::Error> {
@@ -23,7 +21,7 @@ async fn main() -> Result<(), tokio_postgres::Error> {
         loop {
             // Poll for the next message from the connection
             let message = poll_fn(|cx| connection.poll_message(cx)).await;
-
+            
             match message {
                 Some(Ok(message)) => {
                     // Send the message through the channel
