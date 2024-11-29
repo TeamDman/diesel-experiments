@@ -1,0 +1,20 @@
+[package]
+name = "diesel_event_test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+diesel = { version = "2.2.5", features = ["postgres"] }
+dotenvy = "0.15.7"
+futures = "0.3.31"
+tokio = { version = "1.41.1", features = ["full"] }
+tokio-postgres = "0.7.12"
+tokio-stream = "0.1.16"
+
+[[bin]]
+name = "send_event"
+path = "src/send_event.rs"
+
+[[bin]]
+name = "listen_events"
+path = "src/listen_events.rs"
