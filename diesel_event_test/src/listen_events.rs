@@ -1,32 +1,10 @@
 use dotenvy::dotenv;
+use futures::future::poll_fn;
 use std::env;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
+use tokio::sync::mpsc;
 use tokio_postgres::connect;
-use tokio_postgres::tls::NoTlsStream;
 use tokio_postgres::AsyncMessage;
 use tokio_postgres::NoTls;
-use tokio_postgres::Socket;
-use tokio_stream::Stream;
-use tokio_stream::StreamExt;
-
-struct ConnectionStream<'a> {
-    connection: &'a mut tokio_postgres::Connection<Socket, NoTlsStream>,
-}
-
-impl<'a> Stream for ConnectionStream<'a> {
-    type Item = Result<AsyncMessage, tokio_postgres::Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.connection.poll_message(cx) {
-            Poll::Ready(Some(Ok(message))) => Poll::Ready(Some(Ok(message))),
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<(), tokio_postgres::Error> {
@@ -34,26 +12,60 @@ async fn main() -> Result<(), tokio_postgres::Error> {
     dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    // Connect to the database
+    // Connect to the PostgreSQL database
     let (client, mut connection) = connect(&database_url, NoTls).await?;
 
-    // Listen to the 'events' channel
-    client.batch_execute("LISTEN test_event").await?;
+    // Create an unbounded channel for sending messages
+    let (tx, mut rx) = mpsc::unbounded_channel();
 
-    println!("Listening for events...");
+    // Spawn a task to handle incoming messages from the connection
+    tokio::spawn(async move {
+        loop {
+            // Poll for the next message from the connection
+            let message = poll_fn(|cx| connection.poll_message(cx)).await;
 
-    // Create a stream from the connection
-    let mut stream = ConnectionStream {
-        connection: &mut connection,
-    };
-
-    // Process messages from the stream
-    while let Some(message) = stream.next().await {
-        match message? {
-            AsyncMessage::Notification(notification) => {
-                println!("Received notification: {}", notification.payload());
+            match message {
+                Some(Ok(message)) => {
+                    // Send the message through the channel
+                    if tx.send(message).is_err() {
+                        // Receiver has been dropped; exit the loop
+                        break;
+                    }
+                }
+                Some(Err(e)) => {
+                    eprintln!("Connection error: {}", e);
+                    break;
+                }
+                None => {
+                    // Connection has been closed; exit the loop
+                    break;
+                }
             }
-            _ => {} // Handle other message types if necessary
+        }
+    });
+
+    println!("Listener task spawned.");
+
+    // Execute the LISTEN command to subscribe to notifications
+    client
+        .batch_execute("LISTEN test_notifications;")
+        .await
+        .expect("Failed to execute LISTEN command");
+
+    // Continuously receive and handle messages from the channel
+    while let Some(message) = rx.recv().await {
+        match message {
+            AsyncMessage::Notification(notification) => {
+                println!(
+                    "Received notification on channel '{}': {}",
+                    notification.channel(),
+                    notification.payload()
+                );
+            }
+            _ => {
+                // Handle other types of messages if necessary
+                println!("Received non-notification message: {:?}", message);
+            }
         }
     }
 

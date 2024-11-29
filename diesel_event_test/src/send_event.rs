@@ -8,7 +8,7 @@ fn main() {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let mut connection = PgConnection::establish(&database_url).expect("Error connecting to database");
 
-    let event_name = "test_event";
+    let event_name = "test_notifications";
     let payload = r#"{"key": "value"}"#;
 
     // Construct the query with event name and payload
