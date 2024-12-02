@@ -175,7 +175,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "diesel_event_test"
+name = "diesel_experiments"
 version = "0.1.0"
 dependencies = [
  "diesel",
